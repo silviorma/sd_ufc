@@ -32,11 +32,12 @@ public class Server implements P {
 		
 		try {
 			Registry reg = LocateRegistry.getRegistry();
-			System.out.println(reg.list());
 			for(String proc : reg.list()) {
 				P stub = (P) reg.lookup(proc);
+				System.out.print(proc + ",");
 				peers.put(proc, stub);
 			}
+			System.out.println();
 		} catch (RemoteException ex) {
 			
 		} catch (NotBoundException nbex) {
@@ -51,25 +52,33 @@ public class Server implements P {
 	}
 
 	@Override
-	public String startElection() throws RemoteException {
+	public String startElection(long pidOrigem, Registry reg) throws RemoteException {
 		this.mountListPeers();
 		boolean greater = true;
 		
-		for(String key : peers.keySet()) {
-			// check if the peers is alive
-			try {
-				if(peers.get(key).getPID() > this.pid) {
-					String response = peers.get(key).startElection();
-					// found someone with the greater PID
-					if(response != null && response.equals("OK")) {
-						greater = false;
-						break;
+		if(getPID() >= pidOrigem) {
+			for(String key : peers.keySet()) {
+				// check if the peers is alive
+				try {
+					if(peers.get(key).getPID() > this.pid) {
+						String response = peers.get(key).startElection(getPID(), reg);
+						// found someone with the greater PID
+						if(response != null && response.equals("OK")) {
+							greater = false;
+						}
 					}
+				} catch (RemoteException rmex) {
+					try {
+						reg.unbind(key);
+					} catch (NotBoundException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+					System.out.println("Serviço " + key + " não disponível");
 				}
-			} catch (RemoteException rmex) {
-				System.out.println("Serviço " + key + " não disponível");
 			}
-		}
+		} else
+			return "OK";
 		
 		if(greater) {
 			setLeader(getPID());
@@ -83,6 +92,7 @@ public class Server implements P {
 			}
 			return "OK";
 		}
+			
 		
 		return null;
 	}
@@ -113,9 +123,10 @@ public class Server implements P {
 		Server server = new Server();
 		
 		int port = Integer.parseInt(args[0]);
+		Registry reg = null;
+
 		
 		try {
-			Registry reg = null;
 			P stub = null;
 			
 			try {
@@ -127,7 +138,6 @@ public class Server implements P {
 				} catch (RemoteException rex) {
 				}
 			}
-			System.out.println(reg);
 			reg.rebind(""+server.getPID(), stub);
 		} catch(RemoteException rex) {
 		} 
@@ -141,10 +151,13 @@ public class Server implements P {
 			Thread.sleep(5000);
 			// check if the leader is alive
 			try {
+				System.out.println("blabla");
 				System.out.println("Líder atual no processo " + server.getPID() + ": " + server.getLeader().getPID());
 			} catch (Exception e) {
+				System.out.println("blabla111");
 				try {
-					server.startElection();
+					
+					server.startElection(server.getPID(), reg);
 				} catch (RemoteException ex) {
 					ex.printStackTrace();
 				}
