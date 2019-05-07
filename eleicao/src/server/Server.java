@@ -140,15 +140,6 @@ public class Server implements P {
 		try {
 			System.out.println("Actual leader in the process with PID " + this.pid + ": " + leader.getPID());
 			
-			String listOfPeers = "";
-			for(String proc : reg.list()) {
-				P stub = (P) reg.lookup(proc);
-				listOfPeers += proc + ",";
-				peers.put(proc, stub);
-			}
-			
-			System.out.println("List of the peers alive: " + listOfPeers.substring(0, listOfPeers.length() - 1));
-			
 			return true;
 		} catch (Exception rmex) {
 			System.err.println("The actual leader is not responding...");
