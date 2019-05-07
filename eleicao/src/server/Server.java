@@ -1,93 +1,126 @@
 package server;
 
-import java.rmi.AccessException;
 import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
-import java.rmi.server.RemoteObject;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.HashMap;
 import java.util.Map;
 
 import interfaces.P;
 
+
 public class Server implements P {
 	
+	/** mapping the pid of the remote process with the stub */
 	private Map<String, P> peers;
-	private long pid;
-	private P leader;
-	public static int port = 8888;
 	
+	/** Process ID of the peer*/
+	private long pid;
+	
+	/** The actual leader */
+	private P leader;
+	
+	/** RMI registry */
+	private Registry reg;
+	
+	/**
+	 * Initialize the node assigning the pid value 
+	 **/
 	public Server() {
 		String process_name = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
 		
 		this.pid = Long.parseLong(process_name.split("@")[0]);
 		
-		System.out.println("Criando processo " + this.pid);
+		System.out.println("Creating the process with PID " + this.pid);
+		
+		try {
+			reg = LocateRegistry.getRegistry();
+		} catch (RemoteException re) {
+			try {
+				reg = LocateRegistry.getRegistry(1099);
+			} catch (RemoteException rex) {
+				System.err.println("It's not possible get the RMI Registry.");
+				rex.printStackTrace();
+			}
+		}
 	}
 	
-	public void mountListPeers() {
+	/**
+	 * Mount the list of peers existing in the RMI Registry 
+	 **/
+	private void mountListPeers() {
 		peers = new HashMap<String, P>();
 		
 		try {
-			Registry reg = LocateRegistry.getRegistry();
+			String listOfPeers = "";
 			for(String proc : reg.list()) {
 				P stub = (P) reg.lookup(proc);
-				System.out.print(proc + ",");
+				listOfPeers += proc + ",";
 				peers.put(proc, stub);
 			}
-			System.out.println();
+			
+			System.out.println("List of the peers alive: " + listOfPeers.substring(0, listOfPeers.length() - 1));
 		} catch (RemoteException ex) {
-			
+			ex.printStackTrace();
 		} catch (NotBoundException nbex) {
-			
+			nbex.printStackTrace();
 		}
 	}
 
+	/**
+	 * Configure the new leader after the election process 
+	 **/
 	@Override
 	public void setLeader(long pid) throws RemoteException {
-		leader = peers.get(""+pid);
-		System.out.println("Novo líder em " + getPID() + " => " + pid);
+		leader = peers.get("" + pid);
+		System.out.println("New leader in the peer with PID " + getPID() + " => " + pid);
 	}
 
+	/**
+	 * When a new peer comes in or when the leader falls, the new election process
+	 * must be initiated. 
+	 **/
 	@Override
-	public String startElection(long pidOrigem, Registry reg) throws RemoteException {
+	public String startElection(long sourcePid) throws RemoteException {
 		this.mountListPeers();
+		
+		// Check if exists some peer with greater pid than the own pid
 		boolean greater = true;
 		
-		if(getPID() >= pidOrigem) {
+		if(getPID() >= sourcePid) {
 			for(String key : peers.keySet()) {
 				// check if the peers is alive
 				try {
 					if(peers.get(key).getPID() > this.pid) {
-						String response = peers.get(key).startElection(getPID(), reg);
+						String response = peers.get(key).startElection(getPID());
 						// found someone with the greater PID
 						if(response != null && response.equals("OK")) {
 							greater = false;
 						}
 					}
 				} catch (RemoteException rmex) {
+					// if the peer is not responding, the peer is removed of the RMI Registry
 					try {
 						reg.unbind(key);
 					} catch (NotBoundException e) {
-						// TODO Auto-generated catch block
 						e.printStackTrace();
 					}
-					System.out.println("Serviço " + key + " não disponível");
+					System.out.println("The peer with pid " + key + " is not responding");
 				}
 			}
 		} else
 			return "OK";
 		
+		// if it is the greatest pid, then the other peers are notified
 		if(greater) {
 			setLeader(getPID());
 			for(String key : peers.keySet()) {
 				try {
 					peers.get(key).setLeader(getPID());
-					System.out.println("Configurando o novo líder no processo " + key);
 				} catch (RemoteException rex) {
-					System.out.println("Não foi possível configurar o líder para " + key );
+					System.out.println("It's not possible configure the leader in the process " + key );
 				}
 			}
 			return "OK";
@@ -95,6 +128,33 @@ public class Server implements P {
 			
 		
 		return null;
+	}
+	
+	/**
+	 * Ping the leader 
+	 **/
+	public boolean pingLeader() {
+		if(leader == null)
+			return false;
+		
+		try {
+			System.out.println("Actual leader in the process with PID " + this.pid + ": " + leader.getPID());
+			
+			String listOfPeers = "";
+			for(String proc : reg.list()) {
+				P stub = (P) reg.lookup(proc);
+				listOfPeers += proc + ",";
+				peers.put(proc, stub);
+			}
+			
+			System.out.println("List of the peers alive: " + listOfPeers.substring(0, listOfPeers.length() - 1));
+			
+			return true;
+		} catch (Exception rmex) {
+			System.err.println("The actual leader is not responding...");
+			return false;
+		}
+			
 	}
 
 	@Override
@@ -142,39 +202,20 @@ public class Server implements P {
 		} catch(RemoteException rex) {
 		} 
 		
-		Thread.sleep(10000);
+		Thread.sleep(5000);
 		server.mountListPeers();
 		
-		System.out.println("Iniciando a execução....");
+		System.out.println("Initializing ....");
 		
 		while(true) {
 			Thread.sleep(5000);
 			// check if the leader is alive
-			try {
-				System.out.println("blabla");
-				System.out.println("Líder atual no processo " + server.getPID() + ": " + server.getLeader().getPID());
-			} catch (Exception e) {
-				System.out.println("blabla111");
+			if(!server.pingLeader()) {
 				try {
-					
-					server.startElection(server.getPID(), reg);
+					server.startElection(server.getPID());
 				} catch (RemoteException ex) {
 					ex.printStackTrace();
 				}
-				/*for(String key : server.getPeers().keySet()) {
-					// check if the peers is alive
-					try {
-						if(server.getPeers().get(key).getPID() > server.getPID()) {
-							String response = server.getPeers().get(key).startElection();
-							// found someone with the greater PID
-							if(response != null && response.equals("OK"))
-								break;
-							
-						}
-					} catch (RemoteException rmex) {
-						System.out.println("Serviço " + key + " não disponível");
-					}
-				}*/
 			}
 		}
 		
