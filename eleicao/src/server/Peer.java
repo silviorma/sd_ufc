@@ -7,11 +7,12 @@ import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Random;
 
 import interfaces.P;
 
 
-public class Server implements P {
+public class Peer implements P {
 	
 	/** mapping the pid of the remote process with the stub */
 	private Map<String, P> peers;
@@ -28,7 +29,7 @@ public class Server implements P {
 	/**
 	 * Initialize the node assigning the pid value 
 	 **/
-	public Server() {
+	public Peer() {
 		String process_name = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
 		
 		this.pid = Long.parseLong(process_name.split("@")[0]);
@@ -171,10 +172,11 @@ public class Server implements P {
 
 	public static void main(String[] args) throws InterruptedException {
 		
-		Server server = new Server();
+		Peer server = new Peer();
 		
 		int port = Integer.parseInt(args[0]);
 		Registry reg = null;
+		Random rand = new Random();
 
 		
 		try {
@@ -193,10 +195,12 @@ public class Server implements P {
 		} catch(RemoteException rex) {
 		} 
 		
-		Thread.sleep(5000);
-		server.mountListPeers();
+		Thread.sleep(60000);
 		
 		System.out.println("Initializing ....");
+		server.mountListPeers();
+		
+		Thread.sleep(30 + rand.nextInt(30));
 		
 		while(true) {
 			Thread.sleep(5000);
