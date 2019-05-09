@@ -55,7 +55,7 @@ public class Peer implements P {
 		peers = new HashMap<String, P>();
 		
 		try {
-			String listOfPeers = "";
+			String listOfPeers = " ";
 			for(String proc : reg.list()) {
 				P stub = (P) reg.lookup(proc);
 				listOfPeers += proc + ",";
